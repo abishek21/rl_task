@@ -155,8 +155,8 @@ def grade_cnn_classifier(model_code: str):
         issues.append(f"Output shape is {tuple(output.shape)}, expected ({batch_size}, 10)")
         details["output_shape"] = f"✗ Wrong: {tuple(output.shape)}"
 
-    # 2. Check for 8x8 feature map (25 points)
-    max_score += 25
+    # 2. Check for 8x8 feature map (30 points)
+    max_score += 30
     found_8x8 = False
     
     for i, shape_info in enumerate(shapes):
@@ -167,7 +167,7 @@ def grade_cnn_classifier(model_code: str):
             break
 
     if found_8x8:
-        score += 25
+        score += 30
         details["feature_map_8x8"] = "✓ Found 8x8 feature map"
     else:
         issues.append("Feature map not reduced to 8x8")
@@ -189,7 +189,7 @@ def grade_cnn_classifier(model_code: str):
                 break
     
     if found_flatten:
-        score += 15
+        score += 10
         details["flatten"] = "✓ Found flatten layer"
     else:
         issues.append("No flatten layer found")
@@ -241,18 +241,7 @@ def grade_cnn_classifier(model_code: str):
         issues.append("No ReLU activation found")
         details["relu"] = "✗ Missing ReLU"
     
-    # 6. Check for MaxPool layers (10 points)
-    max_score += 10
-    has_maxpool = any("MaxPool" in shape_info["layer"] for shape_info in shapes)
-    
-    if has_maxpool:
-        score += 10
-        details["maxpool"] = "✓ Uses MaxPool layers"
-    else:
-        issues.append("No MaxPool layers found")
-        details["maxpool"] = "✗ Missing MaxPool"
-    
-    # 7. Check architecture contains Conv2d layers (10 points)
+    # 6. Check architecture contains Conv2d layers (10 points)
     max_score += 10
     num_conv_layers = sum(1 for shape_info in shapes if "Conv2d" in shape_info["layer"])
     if num_conv_layers >= 3:
@@ -600,26 +589,24 @@ async def main(concurrent: bool = False):
     # Create reports directory
     os.makedirs(report_dir, exist_ok=True)
     
-    prompt = """Design a CNN classifier for image classification task using PyTorch, which takes image size 128x128x3 with 
-CNN layers, with relu activation and max pooling layers. Build this series of CNN layers and use stride of your choice until the feature map size is reduced to 8x8.
-followed by flatten the output and add two dense (Linear) layers with 64 and 32 units respectively and final output layer with softmax activation for 10 classes.
+    prompt = """Design a CNN classifier for image classification task using PyTorch, which takes image size 128x128x3 with CNN layers, 
+    relu activation and max pooling layers. Build this series of CNN layers and use stride of your choice until the feature map size is reduced to 8x8 , 
+    followed by a flatten layer and then add two dense (Linear) layers with 64 and 32 units respectively and final output layer with softmax activation 
+    for 10 classes.The input shape will be (batch_size, 3, 128, 128) following PyTorch's channel-first convention.
 
-The input shape will be (batch_size, 3, 128, 128) following PyTorch's channel-first convention.
+    Implement the __init__ and forward methods. Instantiate the model as 'model = CNNClassifier()'
 
-Implement the __init__ and forward methods. Instantiate the model as 'model = CNNClassifier()'
+    Please only submit the model code without any extra explanations.
 
-Please only submit the model code without any extra explanations.
+    Your solution will be graded based on:
+    - Forward pass must run without shape errors failing this criteria will result in task completely failing
+    - Correct output shape (batch_size, 10) 
+    - Feature map reduced to 8x8 before 1x1 conv
+    - Dense (Linear) layers with correct units (64, 32)
+    - No zero or negative dimensions (CRITICAL)
+    - Proper use of ReLU and pooling
+    - Correct use of Conv2d layers (CNN)
 
-Your solution will be graded based on:
-- Forward pass must run without shape errors failing this criteria will result in task completely failing
-- Correct output shape (batch_size, 10) 
-- Feature map reduced to 8x8 before 1x1 conv
-- Dense (Linear) layers with correct units (64, 32)
-- No zero or negative dimensions (CRITICAL)
-- Proper use of ReLU and MaxPool
-
-
-.
 """
 
     execution_mode = "concurrently" if concurrent else "sequentially"
