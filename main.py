@@ -591,6 +591,7 @@ async def main(concurrent: bool = False):
     
     prompt = """Design a CNN classifier for image classification task using PyTorch, which takes image size 128x128x3 with CNN layers, 
     relu activation and max pooling layers. Build this series of CNN layers and use stride of your choice until the feature map size is reduced to 8x8 , 
+    and then use 1x1 conv layer to reduce the depth of the channels to 128,
     followed by a flatten layer and then add two dense (Linear) layers with 64 and 32 units respectively and final output layer with softmax activation 
     for 10 classes.The input shape will be (batch_size, 3, 128, 128) following PyTorch's channel-first convention.
 
@@ -602,6 +603,7 @@ async def main(concurrent: bool = False):
     - Forward pass must run without shape errors failing this criteria will result in task completely failing
     - Correct output shape (batch_size, 10) 
     - Feature map reduced to 8x8 before 1x1 conv
+    - Use of 1x1 conv to reduce channels to 128
     - Dense (Linear) layers with correct units (64, 32)
     - No zero or negative dimensions (CRITICAL)
     - Proper use of ReLU and pooling
