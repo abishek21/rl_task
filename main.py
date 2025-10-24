@@ -65,8 +65,8 @@ def grade_cnn_classifier(model_code: str):
     Grading criteria:
     1. Model accepts input shape (batch_size, 3, 128, 128)
     2. Output shape is (batch_size, 10) for 10 classes
-    3. Feature map is reduced to 8x8
-    4. Has 1x1 conv layer after 8x8 feature map
+    3. Feature map is reduced to 7x7
+    4. Has 1x1 conv layer after 7x7 feature map
     5. Has flatten layer
     6. Has two dense layers with 64 and 32 units
     7. Final layer has 10 units with softmax
