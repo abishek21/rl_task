@@ -66,10 +66,11 @@ def grade_cnn_classifier(model_code: str):
     1. Model accepts input shape (batch_size, 3, 128, 128)
     2. Output shape is (batch_size, 10) for 10 classes
     3. Feature map is reduced to 8x8
-    4. Has flatten layer
-    5. Has two dense layers with 64 and 32 units
-    6. Final layer has 10 units with softmax
-    7. Uses ReLU activation and max pooling
+    4. Has 1x1 conv layer after 8x8 feature map
+    5. Has flatten layer
+    6. Has two dense layers with 64 and 32 units
+    7. Final layer has 10 units with softmax
+    8. Uses ReLU activation
     """
     env = {
         "torch": torch,
@@ -146,32 +147,71 @@ def grade_cnn_classifier(model_code: str):
     max_score = 0.0
     details = {}
     issues = []
-    # 1. Check output shape (20 points)
-    max_score += 20
+    # 1. Check output shape (15 points)
+    max_score += 15
     if output.shape == (batch_size, 10):
-        score += 20
+        score += 15
         details["output_shape"] = "✓ Correct (batch_size, 10)"
     else:
         issues.append(f"Output shape is {tuple(output.shape)}, expected ({batch_size}, 10)")
         details["output_shape"] = f"✗ Wrong: {tuple(output.shape)}"
 
-    # 2. Check for 8x8 feature map (30 points)
-    max_score += 30
-    found_8x8 = False
-    
+    # 2. Check for 4x4 feature map (25 points)
+    max_score += 25
+    found_4x4 = False
+    idx_4x4 = -1
+
     for i, shape_info in enumerate(shapes):
         shape = shape_info["output_shape"]
-        # Check if we have a 8x8 spatial dimension (shape would be [batch, channels, 8, 8])
-        if len(shape) == 4 and shape[2] == 8 and shape[3] == 8:
-            found_8x8 = True
+        # Check if we have a 4x4 spatial dimension (shape would be [batch, channels, 4, 4])
+        if len(shape) == 4 and shape[2] == 4 and shape[3] == 4:
+            found_4x4 = True
+            idx_4x4 = i
             break
 
-    if found_8x8:
-        score += 30
+    if found_4x4:
+        score += 25
         details["feature_map_8x8"] = "✓ Found 8x8 feature map"
     else:
         issues.append("Feature map not reduced to 8x8")
         details["feature_map_8x8"] = "✗ Not reduced to 8x8"
+
+    # 2b. Check for 1x1 Conv2d after 8x8 feature map and before flatten (10 points)
+    max_score += 10
+    found_1x1_conv = False
+    idx_flatten = -1
+
+    # Find index of flatten layer (or where shape goes from 4D to 2D)
+    for i, shape_info in enumerate(shapes):
+        if "Flatten" in shape_info["layer"]:
+            idx_flatten = i
+            break
+        if i > 0:
+            prev_shape = shapes[i-1]["output_shape"]
+            curr_shape = shape_info["output_shape"]
+            if len(prev_shape) == 4 and len(curr_shape) == 2:
+                idx_flatten = i
+                break
+
+    # Search for Conv2d with kernel_size=1 between idx_4x4 and idx_flatten
+    if found_4x4 and idx_flatten > idx_4x4:
+        for i in range(idx_4x4 + 1, idx_flatten):
+            if shapes[i]["layer"] == "Conv2d":
+                # Try to get kernel_size from the module
+                # We need to get the actual module, so re-run hooks to get modules
+                # But we can check if the output shape is still (batch, 128, 4, 4)
+                # If so, assume it's the 1x1 conv
+                shape = shapes[i]["output_shape"]
+                if len(shape) == 4 and shape[2] == 4 and shape[3] == 4 and shape[1] == 128:
+                    found_1x1_conv = True
+                    break
+
+    if found_1x1_conv:
+        score += 10
+        details["1x1_conv"] = "✓ Found 1x1 Conv2d after 4x4 feature map"
+    else:
+        issues.append("Missing 1x1 Conv2d after 4x4 feature map and before flatten")
+        details["1x1_conv"] = "✗ Missing 1x1 Conv2d after 4x4 feature map"
 
     # 3. Check for flatten operation (10 points)
     max_score += 10
@@ -590,7 +630,7 @@ async def main(concurrent: bool = False):
     os.makedirs(report_dir, exist_ok=True)
     
     prompt = """Design a CNN classifier for image classification task using PyTorch, which takes image size 128x128x3 with CNN layers, 
-    relu activation and max pooling layers. Build this series of CNN layers and use stride of your choice until the feature map size is reduced to 8x8 , 
+    relu activation. Build this series of CNN layers, use stride either 1 or 2 and use maxpooling if needed until the feature map size is reduced to 4x4 , 
     and then use 1x1 conv layer to reduce the depth of the channels to 128,
     followed by a flatten layer and then add two dense (Linear) layers with 64 and 32 units respectively and final output layer with softmax activation 
     for 10 classes.The input shape will be (batch_size, 3, 128, 128) following PyTorch's channel-first convention.
@@ -606,7 +646,7 @@ async def main(concurrent: bool = False):
     - Use of 1x1 conv to reduce channels to 128
     - Dense (Linear) layers with correct units (64, 32)
     - No zero or negative dimensions (CRITICAL)
-    - Proper use of ReLU and pooling
+    - Proper use of ReLU
     - Correct use of Conv2d layers (CNN)
 
 """

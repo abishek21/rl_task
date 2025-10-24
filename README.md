@@ -6,7 +6,11 @@ The task I came up with for this objective is to ask the LLM to write code for b
 
 <div style="border:1px solid #b2d8b2; background-color:#e6ffe6; padding:16px; border-radius:8px;">
 <strong style="color:#228B22;">
-Design a CNN classifier for image classification task using PyTorch, which takes image size 128x128x3 with CNN layers, relu activation. Build this series of CNN layers and use stride and pooling of your choice until the feature map size is reduced to 8x8, followed by a flatten layer and then add two dense (Linear) layers with 64 and 32 units respectively and final output layer with softmax activation for 10 classes. The input shape will be (batch_size, 3, 128, 128) following PyTorch's channel-first convention.
+Design a CNN classifier for image classification task using PyTorch, which takes image size 128x128x3 with CNN layers, 
+    relu activation. Build this series of CNN layers, use stride either 1 or 2 and use maxpooling if needed until the feature map size is reduced to 4x4 , 
+    and then use 1x1 conv layer to reduce the depth of the channels to 128,
+    followed by a flatten layer and then add two dense (Linear) layers with 64 and 32 units respectively and final output layer with softmax activation 
+    for 10 classes.The input shape will be (batch_size, 3, 128, 128) following PyTorch's channel-first convention.
 
 Implement the <code>__init__</code> and <code>forward</code> methods. Instantiate the model as <code>model = CNNClassifier()</code>
 
@@ -29,8 +33,9 @@ Your solution will be graded based on:
 
 ## Points Breakdown
 
-- 20 points for correct output shape `(batch_size, 10)`
-- 30 points for correct feature map shape `(batch_size, channels, 8, 8)`
+- 15 points for correct output shape `(batch_size, 10)`
+- 25 points for correct feature map shape `(batch_size, channels, 8, 8)`
+- 10 points for implementing 1x1 convl ayer
 - 10 points for implementing flatten layer
 - 20 points for implementing dense layer
 - 10 points for implementing relu activation function
@@ -49,15 +54,21 @@ What this task is trying to teach the LLM is to come up with the correct number 
 
 ### Correct solution
 Correct solution would use either 
-   - 4 conv layers with stride 1 and maxpool pooling layer to reach 8x8 feature map
-         ```
+   - 4 conv layers with stride 1 and maxpool pooling layer to reach 8x8 feature map and use pooling layer
+      ```
       self.conv1 = nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1)
       self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
       self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
       self.conv4 = nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1)
       ```
+      
+      ```
+        x = F.relu(self.conv2(x))
+        x = F.max_pool2d(x, 2)
+      ```
+   
    (or)
-   - 4 conv layers with stride 2 and no maxpool pooling layer to reach 8x8 feature map
+   - 4 conv layers with stride 2 and no maxpool pooling layer to reach 8x8 feature map and no use of pooling layer
 
 2. Correct solution would use 4 conv layers with stride 1 and maxpool pooling layer to reach 8x8 feature map 
 **Note:** Please only run with `concurrent=False`  
