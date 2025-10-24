@@ -110,22 +110,23 @@ def grade_cnn_classifier(model_code: str):
     try:
         test_input = torch.randn(batch_size, 3, 128, 128)
         
-        # Hook to capture intermediate shapes
+        # Hook to capture intermediate shapes and modules
         shapes = []
         hooks = []
-        
+
         def hook_fn(module, input, output):
             if isinstance(output, torch.Tensor):
                 shapes.append({
                     "layer": module.__class__.__name__,
-                    "output_shape": tuple(output.shape)
+                    "output_shape": tuple(output.shape),
+                    "module": module
                 })
-        
+
         # Register hooks on all layers
         for layer in model.modules():
             if layer != model:  # Skip the model itself
                 hooks.append(layer.register_forward_hook(hook_fn))
-        
+
         # Forward pass
         with torch.no_grad():
             output = model(test_input)
@@ -156,27 +157,27 @@ def grade_cnn_classifier(model_code: str):
         issues.append(f"Output shape is {tuple(output.shape)}, expected ({batch_size}, 10)")
         details["output_shape"] = f"✗ Wrong: {tuple(output.shape)}"
 
-    # 2. Check for 4x4 feature map (25 points)
+    # 2. Check for 7x7 feature map (25 points)
     max_score += 25
-    found_4x4 = False
-    idx_4x4 = -1
+    found_7x7 = False
+    idx_7x7 = -1
 
     for i, shape_info in enumerate(shapes):
         shape = shape_info["output_shape"]
-        # Check if we have a 4x4 spatial dimension (shape would be [batch, channels, 4, 4])
-        if len(shape) == 4 and shape[2] == 4 and shape[3] == 4:
-            found_4x4 = True
-            idx_4x4 = i
+        # Check if we have a 7x7 spatial dimension (shape would be [batch, channels, 7, 7])
+        if len(shape) == 4 and shape[2] == 7 and shape[3] == 7:
+            found_7x7 = True
+            idx_7x7 = i
             break
 
-    if found_4x4:
+    if found_7x7:
         score += 25
-        details["feature_map_8x8"] = "✓ Found 8x8 feature map"
+        details["feature_map_7x7"] = "✓ Found 7x7 feature map"
     else:
-        issues.append("Feature map not reduced to 8x8")
-        details["feature_map_8x8"] = "✗ Not reduced to 8x8"
+        issues.append("Feature map not reduced to 7x7")
+        details["feature_map_7x7"] = "✗ Not reduced to 7x7"
 
-    # 2b. Check for 1x1 Conv2d after 8x8 feature map and before flatten (10 points)
+    # 2b. Check for 1x1 Conv2d after 7x7 feature map and before flatten (10 points)
     max_score += 10
     found_1x1_conv = False
     idx_flatten = -1
@@ -193,25 +194,21 @@ def grade_cnn_classifier(model_code: str):
                 idx_flatten = i
                 break
 
-    # Search for Conv2d with kernel_size=1 between idx_4x4 and idx_flatten
-    if found_4x4 and idx_flatten > idx_4x4:
-        for i in range(idx_4x4 + 1, idx_flatten):
-            if shapes[i]["layer"] == "Conv2d":
-                # Try to get kernel_size from the module
-                # We need to get the actual module, so re-run hooks to get modules
-                # But we can check if the output shape is still (batch, 128, 4, 4)
-                # If so, assume it's the 1x1 conv
-                shape = shapes[i]["output_shape"]
-                if len(shape) == 4 and shape[2] == 4 and shape[3] == 4 and shape[1] == 128:
-                    found_1x1_conv = True
-                    break
+    # Search for Conv2d with kernel_size=1 between idx_7x7 and idx_flatten
+    if found_7x7 and idx_flatten > idx_7x7:
+        for i in range(idx_7x7 + 1, idx_flatten):
+            shape_info = shapes[i]
+            module = shape_info.get("module", None)
+            if isinstance(module, nn.Conv2d) and getattr(module, "kernel_size", None) == (1, 1):
+                found_1x1_conv = True
+                break
 
     if found_1x1_conv:
         score += 10
-        details["1x1_conv"] = "✓ Found 1x1 Conv2d after 4x4 feature map"
+        details["1x1_conv"] = "✓ Found 1x1 Conv2d after 7x7 feature map"
     else:
-        issues.append("Missing 1x1 Conv2d after 4x4 feature map and before flatten")
-        details["1x1_conv"] = "✗ Missing 1x1 Conv2d after 4x4 feature map"
+        issues.append("Missing 1x1 Conv2d after 7x7 feature map and before flatten")
+        details["1x1_conv"] = "✗ Missing 1x1 Conv2d after 7x7 feature map"
 
     # 3. Check for flatten operation (10 points)
     max_score += 10
@@ -295,6 +292,40 @@ def grade_cnn_classifier(model_code: str):
         details["conv_layers"] = "✗ No Conv2d layers found"
         issues.append("No Conv2d layers found")
     
+    # 7. Check all Conv2d layers use kernel_size=5 (if not, -10 points)
+    kernel_size_issue = False
+    for shape_info in shapes:
+        module = shape_info.get("module", None)
+        if isinstance(module, nn.Conv2d):
+            # Allow 1x1 conv for the reduction layer, but all others must be 5x5
+            if getattr(module, "kernel_size", None) != (5, 5) and getattr(module, "kernel_size", None) != (1, 1):
+                kernel_size_issue = True
+                break
+    if kernel_size_issue:
+        score -= 10
+        issues.append("One or more Conv2d layers use kernel size other than 5 (except 1x1 conv)")
+        details["kernel_size"] = "✗ Not all Conv2d layers use kernel size 5 (except 1x1 conv)"
+    else:
+        details["kernel_size"] = "✓ All Conv2d layers use kernel size 5 (except 1x1 conv)"
+
+    # 8. Check all Conv2d layers use padding=1 (if not, -10 points)
+    padding_issue = False
+    for shape_info in shapes:
+        module = shape_info.get("module", None)
+        if isinstance(module, nn.Conv2d):
+            # Allow 1x1 conv for the reduction layer, but all others must be padding=1
+            if getattr(module, "kernel_size", None) == (1, 1):
+                continue
+            if getattr(module, "padding", None) != (1, 1):
+                padding_issue = True
+                break
+    if padding_issue:
+        score -= 10
+        issues.append("One or more Conv2d layers use padding other than 1 (except 1x1 conv)")
+        details["padding"] = "✗ Not all Conv2d layers use padding=1 (except 1x1 conv)"
+    else:
+        details["padding"] = "✓ All Conv2d layers use padding=1 (except 1x1 conv)"
+
     # Get number of parameters for reporting
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     
@@ -630,8 +661,8 @@ async def main(concurrent: bool = False):
     os.makedirs(report_dir, exist_ok=True)
     
     prompt = """Design a CNN classifier for image classification task using PyTorch, which takes image size 128x128x3 with CNN layers, 
-    relu activation. Build this series of CNN layers, use stride either 1 or 2 and use maxpooling if needed until the feature map size is reduced to 4x4 , 
-    and then use 1x1 conv layer to reduce the depth of the channels to 128,
+    relu activation. Build this series of CNN layers with kernel size 5 and padding 1, Choose stride such that you reach the feature map size is 7x7, 
+    and then use 1x1 cnn layer to reduce the depth of the channels to 128,
     followed by a flatten layer and then add two dense (Linear) layers with 64 and 32 units respectively and final output layer with softmax activation 
     for 10 classes.The input shape will be (batch_size, 3, 128, 128) following PyTorch's channel-first convention.
 
@@ -641,14 +672,14 @@ async def main(concurrent: bool = False):
 
     Your solution will be graded based on:
     - Forward pass must run without shape errors failing this criteria will result in task completely failing
-    - Correct output shape (batch_size, 10) 
-    - Feature map reduced to 8x8 before 1x1 conv
+    - Correct output shape (batch_size, 10)
+    - Use of kernel size 5 and padding 1 in CNN layers
+    - Feature map size is 7x7 (Most Important)
     - Use of 1x1 conv to reduce channels to 128
     - Dense (Linear) layers with correct units (64, 32)
     - No zero or negative dimensions (CRITICAL)
     - Proper use of ReLU
     - Correct use of Conv2d layers (CNN)
-
 """
 
     execution_mode = "concurrently" if concurrent else "sequentially"
